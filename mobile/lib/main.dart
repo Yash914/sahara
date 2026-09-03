@@ -56,16 +56,9 @@ class _LoginState extends State<LoginScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => authority
-            ? AuthorityScreen(logout: backToLogin)
-            : ParticipantScreen(caseId: value, logout: backToLogin),
+            ? const AuthorityScreen()
+            : ParticipantScreen(caseId: value),
       ),
-    );
-  }
-
-  void backToLogin() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
   }
 
@@ -262,13 +255,8 @@ class _RoleButton extends StatelessWidget {
 
 class ParticipantScreen extends StatefulWidget {
   final String caseId;
-  final VoidCallback logout;
 
-  const ParticipantScreen({
-    super.key,
-    required this.caseId,
-    required this.logout,
-  });
+  const ParticipantScreen({super.key, required this.caseId});
 
   @override
   State<ParticipantScreen> createState() => _ParticipantState();
@@ -284,22 +272,28 @@ class _ParticipantState extends State<ParticipantScreen> {
   int seconds = 0;
   Timer? timer;
 
+  void logout() {
+    timer?.cancel();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
   Future<void> toggleRecord() async {
     if (recording) {
       audio = await recorder.stop();
       timer?.cancel();
-      if (mounted) {
-        setState(() => recording = false);
-      }
+      if (!mounted) return;
+      setState(() => recording = false);
       return;
     }
 
     if (!await recorder.hasPermission()) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission is required.')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone permission is required.')),
+      );
       return;
     }
 
@@ -318,11 +312,10 @@ class _ParticipantState extends State<ParticipantScreen> {
 
     seconds = 0;
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() => seconds++);
-      }
+      if (mounted) setState(() => seconds++);
     });
 
+    if (!mounted) return;
     setState(() {
       recording = true;
       audio = null;
@@ -347,21 +340,21 @@ class _ParticipantState extends State<ParticipantScreen> {
         text: text.text,
         audioPath: audio,
       );
+
+      if (!mounted) return;
+
       text.clear();
       audio = null;
-      if (mounted) {
-        setState(() => done = true);
-      }
+      setState(() {
+        done = true;
+        busy = false;
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not submit: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => busy = false);
-      }
+      if (!mounted) return;
+      setState(() => busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not submit: $e')),
+      );
     }
   }
 
@@ -380,7 +373,7 @@ class _ParticipantState extends State<ParticipantScreen> {
         title: const Text('SAHARA'),
         actions: [
           IconButton(
-            onPressed: widget.logout,
+            onPressed: logout,
             icon: const Icon(Icons.logout),
           ),
         ],
@@ -538,9 +531,7 @@ class _ParticipantState extends State<ParticipantScreen> {
 }
 
 class AuthorityScreen extends StatefulWidget {
-  final VoidCallback logout;
-
-  const AuthorityScreen({super.key, required this.logout});
+  const AuthorityScreen({super.key});
 
   @override
   State<AuthorityScreen> createState() => _AuthorityState();
@@ -552,20 +543,25 @@ class _AuthorityState extends State<AuthorityScreen> {
   int tab = 0;
   String query = '';
 
+  void logout() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
   Future<void> load() async {
     if (mounted) setState(() => loading = true);
 
     try {
       final result = await ApiService.getCases();
-      if (mounted) {
-        setState(() => cases = result);
-      }
+      if (!mounted) return;
+      setState(() => cases = result);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Backend unavailable: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Backend unavailable: $e')),
+      );
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -608,10 +604,7 @@ class _AuthorityState extends State<AuthorityScreen> {
         title: const Text('Authority Console'),
         actions: [
           IconButton(onPressed: load, icon: const Icon(Icons.refresh)),
-          IconButton(
-            onPressed: widget.logout,
-            icon: const Icon(Icons.logout),
-          ),
+          IconButton(onPressed: logout, icon: const Icon(Icons.logout)),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -867,19 +860,16 @@ class _CaseDetailState extends State<CaseDetailScreen> {
         ApiService.getHistory(widget.caseId),
       ]);
 
-      final summaryResult = result[0] as Map<String, dynamic>;
-      final historyResult = result[1] as Map<String, dynamic>;
-
       if (!mounted) return;
 
       setState(() {
-        summary = summaryResult;
+        summary = result[0] as Map<String, dynamic>;
+        final historyResult = result[1] as Map<String, dynamic>;
         history = List<dynamic>.from(historyResult['history'] ?? []);
         loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-
       setState(() => loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Unable to load case: $e')),
@@ -899,10 +889,7 @@ class _CaseDetailState extends State<CaseDetailScreen> {
                 padding: EdgeInsets.all(18),
                 child: Text(
                   'Assign support',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
               ),
               ListTile(
@@ -959,12 +946,10 @@ class _CaseDetailState extends State<CaseDetailScreen> {
     final urgent =
         risk == 'High' || risk == 'Severe' || trend == 'Increasing';
 
-    final values = history
-        .map((item) {
-          final map = Map<String, dynamic>.from(item);
-          return (map['distress_score'] as num?)?.toDouble() ?? 0;
-        })
-        .toList();
+    final values = history.map((item) {
+      final map = Map<String, dynamic>.from(item);
+      return (map['distress_score'] as num?)?.toDouble() ?? 0;
+    }).toList();
 
     final children = <Widget>[
       Row(
@@ -1050,13 +1035,9 @@ class _CaseDetailState extends State<CaseDetailScreen> {
         children: [
           Expanded(child: _Metric('Trend', trend, Icons.timeline)),
           const SizedBox(width: 8),
-          Expanded(
-            child: _Metric('Average', average, Icons.analytics_outlined),
-          ),
+          Expanded(child: _Metric('Average', average, Icons.analytics_outlined)),
           const SizedBox(width: 8),
-          Expanded(
-            child: _Metric('Maximum', maximum, Icons.arrow_upward),
-          ),
+          Expanded(child: _Metric('Maximum', maximum, Icons.arrow_upward)),
         ],
       ),
     ];
@@ -1225,10 +1206,7 @@ class _Metric extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: green),
             const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
             Text(title, style: const TextStyle(fontSize: 10)),
           ],
         ),
@@ -1250,10 +1228,7 @@ class _HistoryTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: CircleAvatar(
-          radius: 15,
-          child: Text('$index'),
-        ),
+        leading: CircleAvatar(radius: 15, child: Text('$index')),
         title: Text('Score ${score.toStringAsFixed(2)} / 24'),
         subtitle: Text(
           '${data['timestamp'] ?? ''} • ${data['risk_level'] ?? ''}',
@@ -1406,11 +1381,7 @@ class _ChartPainter extends CustomPainter {
 
     for (int i = 0; i < 5; i++) {
       final y = 18 + (size.height - 42) * i / 4;
-      canvas.drawLine(
-        Offset(34, y),
-        Offset(size.width - 8, y),
-        grid,
-      );
+      canvas.drawLine(Offset(34, y), Offset(size.width - 8, y), grid);
     }
 
     final path = Path();
@@ -1429,11 +1400,7 @@ class _ChartPainter extends CustomPainter {
         path.lineTo(x, y);
       }
 
-      canvas.drawCircle(
-        Offset(x, y),
-        4,
-        Paint()..color = green,
-      );
+      canvas.drawCircle(Offset(x, y), 4, Paint()..color = green);
     }
 
     canvas.drawPath(path, line);
@@ -1468,11 +1435,7 @@ class _Empty extends StatelessWidget {
         padding: const EdgeInsets.all(25),
         child: Column(
           children: [
-            const Icon(
-              Icons.inbox_outlined,
-              size: 38,
-              color: Colors.grey,
-            ),
+            const Icon(Icons.inbox_outlined, size: 38, color: Colors.grey),
             const SizedBox(height: 8),
             Text(
               title,
