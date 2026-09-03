@@ -1,26 +1,546 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+
 import 'api_service.dart';
 
-void main() => runApp(const SaharaApp());
-class SaharaApp extends StatelessWidget { const SaharaApp({super.key}); @override Widget build(BuildContext context) => MaterialApp(title:'SAHARA',debugShowCheckedModeBanner:false,theme:ThemeData(useMaterial3:true,colorSchemeSeed:const Color(0xFF14966A)),home:const RoleScreen()); }
-
-class RoleScreen extends StatelessWidget { const RoleScreen({super.key}); @override Widget build(BuildContext context)=>Scaffold(body:SafeArea(child:Center(child:Padding(padding:const EdgeInsets.all(28),child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[const Icon(Icons.shield_rounded,size:72,color:Color(0xFF14966A)),const SizedBox(height:16),const Text('SAHARA',style:TextStyle(fontSize:36,fontWeight:FontWeight.bold)),const SizedBox(height:8),const Text('Support • Assessment • Human Assistance • Response',textAlign:TextAlign.center),const SizedBox(height:42),_RoleButton(label:'Participant',icon:Icons.person_outline,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ParticipantScreen()))),const SizedBox(height:14),_RoleButton(label:'Authority',icon:Icons.admin_panel_settings_outlined,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const AuthorityScreen())))]))))); }
-class _RoleButton extends StatelessWidget { final String label;final IconData icon;final VoidCallback onTap;const _RoleButton({required this.label,required this.icon,required this.onTap});@override Widget build(BuildContext context)=>SizedBox(width:double.infinity,height:56,child:FilledButton.icon(onPressed:onTap,icon:Icon(icon),label:Text(label,style:const TextStyle(fontSize:17)))); }
-
-class ParticipantScreen extends StatefulWidget { const ParticipantScreen({super.key});@override State<ParticipantScreen> createState()=>_ParticipantScreenState(); }
-class _ParticipantScreenState extends State<ParticipantScreen> {
- final text=TextEditingController();final caseId=TextEditingController(text:'DEMO-001');final recorder=AudioRecorder();String? audioPath;bool recording=false,sending=false;Timer? timer;int seconds=0;
- Future<void> toggleRecord() async { if(recording){audioPath=await recorder.stop();timer?.cancel();setState(()=>recording=false);return;}if(!await recorder.hasPermission()){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission is required.')));return;}final dir=await getTemporaryDirectory();final path='${dir.path}/sahara_${DateTime.now().millisecondsSinceEpoch}.wav';await recorder.start(const RecordConfig(encoder:AudioEncoder.wav,sampleRate:16000,numChannels:1),path:path);seconds=0;timer=Timer.periodic(const Duration(seconds:1),(_)=>setState(()=>seconds++));setState((){recording=true;audioPath=null;}); }
- Future<void> submit() async {if(caseId.text.trim().isEmpty||(text.text.trim().isEmpty&&audioPath==null))return;setState(()=>sending=true);try{await ApiService.analyzeInteraction(caseId:caseId.text.trim(),text:text.text,audioPath:audioPath);text.clear();audioPath=null;if(mounted)showDialog(context:context,builder:(_)=>const AlertDialog(title:Text('Thank you'),content:Text('Your response has been received securely.')));}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not submit: $e')));}finally{if(mounted)setState(()=>sending=false);}}
- @override void dispose(){timer?.cancel();recorder.dispose();text.dispose();caseId.dispose();super.dispose();}
- @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('SAHARA')),body:ListView(padding:const EdgeInsets.all(20),children:[const Text('Share how you are feeling',style:TextStyle(fontSize:25,fontWeight:FontWeight.bold)),const SizedBox(height:8),const Text('You can respond using text or your voice. Your response is handled securely.'),const SizedBox(height:24),TextField(controller:caseId,decoration:const InputDecoration(labelText:'Case ID',border:OutlineInputBorder())),const SizedBox(height:14),TextField(controller:text,maxLines:6,decoration:const InputDecoration(labelText:'Write your response',border:OutlineInputBorder(),alignLabelWithHint:true)),const SizedBox(height:18),OutlinedButton.icon(onPressed:sending?null:toggleRecord,icon:Icon(recording?Icons.stop:Icons.mic),label:Text(recording?'Stop recording  ${seconds}s':(audioPath==null?'Record voice':'Voice recorded'))),if(audioPath!=null)const Padding(padding:EdgeInsets.only(top:8),child:Text('Voice response ready to submit.')),const SizedBox(height:18),SizedBox(height:52,child:FilledButton(onPressed:sending?null:submit,child:sending?const SizedBox(width:22,height:22,child:CircularProgressIndicator()):const Text('Submit response'))),const SizedBox(height:18),const Card(child:Padding(padding:EdgeInsets.all(16),child:Row(children:[Icon(Icons.lock_outline),SizedBox(width:12),Expanded(child:Text('Your response is private. This screen does not display distress scores or model results.')))]))]));
+void main() {
+  runApp(const SaharaApp());
 }
 
-class AuthorityScreen extends StatefulWidget {const AuthorityScreen({super.key});@override State<AuthorityScreen> createState()=>_AuthorityScreenState();}
-class _AuthorityScreenState extends State<AuthorityScreen>{List<dynamic> cases=[];bool loading=true;Future<void>load()async{setState(()=>loading=true);try{cases=await ApiService.getCases();}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Backend unavailable: $e')));}finally{if(mounted)setState(()=>loading=false);}}@override void initState(){super.initState();load();}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Authority Dashboard'),actions:[IconButton(onPressed:load,icon:const Icon(Icons.refresh))]),body:loading?const Center(child:CircularProgressIndicator()):cases.isEmpty?const Center(child:Text('No cases available')):RefreshIndicator(onRefresh:load,child:ListView.builder(padding:const EdgeInsets.all(14),itemCount:cases.length,itemBuilder:(_,i){final c=cases[i] as Map<String,dynamic>;final id=(c['case_id']??'').toString();final risk=(c['risk']??'Unknown').toString();final score=c['score'];return Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person_outline)),title:Text(id.isEmpty?'Case':id),subtitle:Text('Risk: $risk\nScore: ${score??'-'}'),isThreeLine:true,trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CaseDetailScreen(caseId:id)))));}));}
+class SaharaApp extends StatelessWidget {
+  const SaharaApp({super.key});
 
-class CaseDetailScreen extends StatefulWidget{final String caseId;const CaseDetailScreen({super.key,required this.caseId});@override State<CaseDetailScreen>createState()=>_CaseDetailScreenState();}
-class _CaseDetailScreenState extends State<CaseDetailScreen>{Map<String,dynamic>?summary;List<dynamic>history=[];bool loading=true;Future<void>load()async{try{final s=await ApiService.getSummary(widget.caseId);final h=await ApiService.getHistory(widget.caseId);if(mounted)setState((){summary=s;history=List<dynamic>.from(h['history']??[]);loading=false;});}catch(e){if(mounted){setState(()=>loading=false);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Unable to load case: $e')));}}}@override void initState(){super.initState();load();}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.caseId)),body:loading?const Center(child:CircularProgressIndicator()):ListView(padding:const EdgeInsets.all(18),children:[const Text('Case overview',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)),const SizedBox(height:14),Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Latest score: ${summary?['current_score']??'-'}',style:const TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:8),Text('Risk: ${summary?['current_risk']??'-'}'),const SizedBox(height:8),Text('Trend: ${summary?['trend']??'-'}'),const SizedBox(height:8),Text('Priority: ${summary?['priority']??'-'}'),const SizedBox(height:8),Text('Interactions: ${summary?['interaction_count']??history.length}')])),),const SizedBox(height:18),const Text('Longitudinal history',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:8),...history.map((h){final x=h as Map<String,dynamic>;return ListTile(dense:true,leading:const Icon(Icons.timeline),title:Text('Score: ${x['distress_score']??'-'}'),subtitle:Text('${x['timestamp']??''} • ${x['risk_level']??''}'));})]));}
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'SAHARA',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: const Color(0xFF14966A),
+      ),
+      home: const RoleScreen(),
+    );
+  }
+}
+
+class RoleScreen extends StatelessWidget {
+  const RoleScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.shield_rounded,
+                  size: 72,
+                  color: Color(0xFF14966A),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'SAHARA',
+                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Support • Assessment • Human Assistance • Response',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 42),
+                _RoleButton(
+                  label: 'Participant',
+                  icon: Icons.person_outline,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ParticipantScreen(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _RoleButton(
+                  label: 'Authority',
+                  icon: Icons.admin_panel_settings_outlined,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AuthorityScreen()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoleButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _RoleButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon),
+        label: Text(label, style: const TextStyle(fontSize: 17)),
+      ),
+    );
+  }
+}
+
+class ParticipantScreen extends StatefulWidget {
+  const ParticipantScreen({super.key});
+
+  @override
+  State<ParticipantScreen> createState() => _ParticipantScreenState();
+}
+
+class _ParticipantScreenState extends State<ParticipantScreen> {
+  final textController = TextEditingController();
+  final caseIdController = TextEditingController();
+  final recorder = AudioRecorder();
+
+  String? audioPath;
+  bool recording = false;
+  bool sending = false;
+  Timer? timer;
+  int seconds = 0;
+
+  Future<void> toggleRecord() async {
+    if (recording) {
+      final path = await recorder.stop();
+      timer?.cancel();
+      if (mounted) {
+        setState(() {
+          recording = false;
+          audioPath = path;
+        });
+      }
+      return;
+    }
+
+    if (!await recorder.hasPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission is required.')),
+        );
+      }
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/sahara_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+    await recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+      path: path,
+    );
+
+    seconds = 0;
+    timer?.cancel();
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() => seconds++);
+      }
+    });
+
+    if (mounted) {
+      setState(() {
+        recording = true;
+        audioPath = null;
+      });
+    }
+  }
+
+  Future<void> submit() async {
+    final id = caseIdController.text.trim();
+    final message = textController.text.trim();
+
+    if (id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your Case ID.')),
+      );
+      return;
+    }
+
+    if (message.isEmpty && audioPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter text or record your voice.')),
+      );
+      return;
+    }
+
+    setState(() => sending = true);
+
+    try {
+      await ApiService.analyzeInteraction(
+        caseId: id,
+        text: message,
+        audioPath: audioPath,
+      );
+
+      textController.clear();
+      setState(() => audioPath = null);
+
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => const AlertDialog(
+            title: Text('Thank you'),
+            content: Text(
+              'Your response has been received securely.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not submit: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => sending = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    recorder.dispose();
+    textController.dispose();
+    caseIdController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('SAHARA')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Text(
+            'Share how you are feeling',
+            style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'You can respond using text or your voice. Your response is handled securely.',
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: caseIdController,
+            decoration: const InputDecoration(
+              labelText: 'Case ID',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: textController,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              labelText: 'Write your response',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(
+            onPressed: sending ? null : toggleRecord,
+            icon: Icon(recording ? Icons.stop : Icons.mic),
+            label: Text(
+              recording
+                  ? 'Stop recording  ${seconds}s'
+                  : (audioPath == null ? 'Record voice' : 'Voice recorded'),
+            ),
+          ),
+          if (audioPath != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Voice response ready to submit.'),
+            ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 52,
+            child: FilledButton(
+              onPressed: sending ? null : submit,
+              child: sending
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(),
+                    )
+                  : const Text('Submit response'),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_outline),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Your response is private. This screen does not display distress scores or model results.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AuthorityScreen extends StatefulWidget {
+  const AuthorityScreen({super.key});
+
+  @override
+  State<AuthorityScreen> createState() => _AuthorityScreenState();
+}
+
+class _AuthorityScreenState extends State<AuthorityScreen> {
+  List<dynamic> cases = [];
+  bool loading = true;
+
+  Future<void> load() async {
+    if (mounted) setState(() => loading = true);
+
+    try {
+      cases = await ApiService.getCases();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Backend unavailable: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Authority Dashboard'),
+        actions: [
+          IconButton(onPressed: load, icon: const Icon(Icons.refresh)),
+        ],
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : cases.isEmpty
+              ? const Center(child: Text('No cases available'))
+              : RefreshIndicator(
+                  onRefresh: load,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: cases.length,
+                    itemBuilder: (_, index) {
+                      final c = Map<String, dynamic>.from(cases[index]);
+                      final id = (c['case_id'] ?? '').toString();
+                      final risk = (c['risk'] ?? 'Unknown').toString();
+                      final score = c['score'];
+
+                      return Card(
+                        child: ListTile(
+                          leading: const CircleAvatar(
+                            child: Icon(Icons.person_outline),
+                          ),
+                          title: Text(id.isEmpty ? 'Case' : id),
+                          subtitle: Text(
+                            'Risk: $risk\nScore: ${score ?? '-'}',
+                          ),
+                          isThreeLine: true,
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: id.isEmpty
+                              ? null
+                              : () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CaseDetailScreen(caseId: id),
+                                    ),
+                                  ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+    );
+  }
+}
+
+class CaseDetailScreen extends StatefulWidget {
+  final String caseId;
+
+  const CaseDetailScreen({super.key, required this.caseId});
+
+  @override
+  State<CaseDetailScreen> createState() => _CaseDetailScreenState();
+}
+
+class _CaseDetailScreenState extends State<CaseDetailScreen> {
+  Map<String, dynamic>? summary;
+  List<dynamic> history = [];
+  bool loading = true;
+
+  Future<void> load() async {
+    try {
+      final s = await ApiService.getSummary(widget.caseId);
+      final h = await ApiService.getHistory(widget.caseId);
+
+      if (mounted) {
+        setState(() {
+          summary = s;
+          history = List<dynamic>.from(h['history'] ?? []);
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to load case: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = summary ?? <String, dynamic>{};
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.caseId)),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: load,
+              child: ListView(
+                padding: const EdgeInsets.all(18),
+                children: [
+                  const Text(
+                    'Case overview',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Latest score: ${data['current_score'] ?? '-'}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text('Risk: ${data['current_risk'] ?? '-'}'),
+                          const SizedBox(height: 8),
+                          Text('Trend: ${data['trend'] ?? '-'}'),
+                          const SizedBox(height: 8),
+                          Text('Priority: ${data['priority'] ?? '-'}'),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Interactions: ${data['interaction_count'] ?? history.length}',
+                          ),
+                          if (data['alert'] == true) ...[
+                            const SizedBox(height: 12),
+                            const Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded),
+                                SizedBox(width: 8),
+                                Text('Alert requires attention'),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Longitudinal history',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  if (history.isEmpty)
+                    const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('No interaction history available.'),
+                      ),
+                    )
+                  else
+                    ...history.map((item) {
+                      final x = Map<String, dynamic>.from(item);
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.timeline),
+                        title: Text(
+                          'Score: ${x['distress_score'] ?? '-'}',
+                        ),
+                        subtitle: Text(
+                          '${x['timestamp'] ?? ''} • ${x['risk_level'] ?? ''}',
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+    );
+  }
+}
